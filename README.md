@@ -1,12 +1,14 @@
 # centcom-claude-managed-agents
 
-Starter scaffold for Claude Managed Agents -> Contro1 approvals.
+Production-oriented blueprint for bridging Claude Managed Agents action-needed events into Contro1/CENTCOM approvals using Integration Protocol v1.
 
-This repository is the V1 bridge pattern for:
+## What this blueprint covers
 
-1. listening to session events (`requires_action`)
-2. creating Contro1 protocol requests
-3. mapping operator decisions back to managed-agent continuation actions
+1. Ingest `requires_action` events from your managed-agent stream.
+2. Create exactly one Contro1 protocol request per action-needed event.
+3. Verify signed callbacks from Contro1.
+4. Map callback outcomes to managed-agent continuation payloads.
+5. Persist correlation state, dedupe replays, retry continuation transport, and dead-letter exhausted failures.
 
 ## Files
 
@@ -16,11 +18,13 @@ This repository is the V1 bridge pattern for:
 - `docs/claude-managed-agents-connector.md`
 - `skills/centcom-claude-managed-agents.md`
 
-## V1 decisions
+## Contract decisions (required)
 
-- one Contro1 request per action-needed event
-- dedupe by `session_id + external_action_id`
-- "revise" is mapped to **instruction mode** (not deny-only)
+- Dedupe key: `session_id:external_action_id`
+- One request per action-needed event
+- `continuation.mode=instruction` by default
+- Status mapping is explicit (`approved`, `denied`, `cancelled`, `timed_out`)
+- Callback signature + timestamp verification is mandatory
 
 ## Quick Start
 
@@ -32,18 +36,28 @@ cp .env.example .env
 python examples/session_event_bridge.py
 ```
 
-The script is intentionally a local scaffold and does not include Anthropic SDK wiring yet.
+Then:
 
-## What the starter already solves
+1. POST a sample event to `/managed-agent/event`.
+2. Confirm a request is created in CENTCOM.
+3. Resolve request in dashboard.
+4. Confirm callback arrives at `/centcom-callback` and bridge logs continuation mapping.
 
-- protocol v1 request mapping (`decision` / `instruction`)
-- dedupe for replay/reconnect events
-- external action correlation (`session_id + external_action_id`)
-- callback endpoint placeholder for mapping to:
-  - tool confirmation
-  - custom tool result
-  - interrupt + follow-up message
+## Local vs production mode
 
-## Recommended next implementation step
+- **Local default**: `SIMULATE_CONTINUATION=true` (logs continuation payload without calling Anthropic).
+- **Production**: set `SIMULATE_CONTINUATION=false` and configure:
+  - `ANTHROPIC_CONTINUATION_URL`
+  - `ANTHROPIC_API_KEY`
 
-Replace the local `/managed-agent/event` input with your real session stream listener and wire `/centcom-callback` to the exact Anthropic continuation API your runtime uses.
+## Production checklist
+
+- Run behind HTTPS and stable public callback URL (`PUBLIC_BASE_URL`).
+- Persist `actions` and `dead_letters` in durable storage (replace sqlite when needed).
+- Monitor retry exhaustion and dead letters.
+- Add health checks and structured logging.
+- Lock down callback endpoint with signature + timestamp validation.
+
+## Notes
+
+The example intentionally avoids Anthropic SDK-specific assumptions. Keep the mapping logic, persistence model, and retry behavior as-is, and swap only the `send_to_anthropic_continuation(...)` transport for your runtime endpoint.
