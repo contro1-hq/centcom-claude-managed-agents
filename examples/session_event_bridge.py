@@ -36,7 +36,7 @@ ANTHROPIC_CONTINUATION_URL = os.environ.get("ANTHROPIC_CONTINUATION_URL", "")
 
 client = CentcomClient(
     api_key=os.environ["CENTCOM_API_KEY"],
-    base_url=os.environ.get("CENTCOM_BASE_URL", "https://contro1.com/api/centcom/v1"),
+    base_url=os.environ.get("CENTCOM_BASE_URL", "https://api.contro1.com/api/centcom/v1"),
 )
 
 
