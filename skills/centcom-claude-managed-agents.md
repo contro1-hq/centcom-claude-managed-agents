@@ -49,6 +49,21 @@ Create protocol v1 request with:
 - `external_request_id`: `session_id:external_action_id`
 - `continuation.mode`: `instruction` (recommended default)
 - `continuation.callback_url`: `${PUBLIC_BASE_URL}/centcom-callback`
+- `approval_policy`: required for high-risk actions that need two-person review
+
+Example high-risk policy:
+
+```json
+{
+  "approval_policy": {
+    "mode": "threshold",
+    "required_approvals": 2,
+    "required_roles": ["manager", "admin"],
+    "separation_of_duties": true,
+    "fail_closed_on_timeout": true
+  }
+}
+```
 
 ### Incoming from Contro1 callback
 
@@ -82,6 +97,7 @@ Create protocol v1 request with:
 - instruction payload/message -> continue via instruction-mode action
 - `timed_out` -> fail closed unless policy explicitly allows fail open
 - `cancelled` -> deny with explicit operator cancellation reason
+- quorum pending -> do not continue the managed-agent action yet; wait for final callback
 
 ## Security requirements
 
@@ -91,6 +107,7 @@ Create protocol v1 request with:
 - Avoid storing raw secrets in logs.
 - Validate that callback `request_id` exists in mapping table before continuation.
 - Never continue the same `session_id:external_action_id` twice.
+- For deploys, vendor payments, data deletion, and privilege escalation, require two-person approval and fail closed before quorum.
 
 ## Common mistakes to avoid
 
@@ -99,3 +116,4 @@ Create protocol v1 request with:
 - Losing correlation IDs between event ingest and callback handling.
 - Retrying continuation without idempotent keys.
 - Dropping exhausted continuation failures instead of dead-lettering.
+- Continuing after the first approval while the second approval is still pending.
