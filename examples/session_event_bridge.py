@@ -44,6 +44,12 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def contro1_thread_id(value: str) -> str:
+    if value.startswith("thr_") and len(value) <= 68:
+        return value
+    return f"thr_claude_{hashlib.sha256(value.encode('utf-8')).hexdigest()[:32]}"
+
+
 def db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -192,6 +198,7 @@ def build_protocol_request(event: dict[str, Any], dedupe_key: str) -> dict[str, 
     external_action_id = str(event["external_action_id"]).strip()
     action_type = str(event.get("action_type", "tool_confirmation"))
     summary = str(event.get("summary", "Managed agent action requires review"))
+    thread_id = contro1_thread_id(session_id)
 
     return {
         "title": f"Managed agent action: {action_type}",
@@ -217,10 +224,12 @@ def build_protocol_request(event: dict[str, Any], dedupe_key: str) -> dict[str, 
             "callback_url": f"{PUBLIC_BASE_URL}/centcom-callback",
         },
         "external_request_id": dedupe_key,
+        "thread_id": thread_id,
         "metadata": {
             "session_id": session_id,
             "external_action_id": external_action_id,
             "action_type": action_type,
+            "contro1_thread_id": thread_id,
             "event_hash": hashlib.sha256(json.dumps(event, sort_keys=True).encode("utf-8")).hexdigest(),
         },
     }
@@ -438,6 +447,24 @@ def centcom_callback():
         external_action_id=action["external_action_id"],
         action_type=action["action_type"],
         callback_payload=payload,
+    )
+    thread_id = contro1_thread_id(str(action["session_id"]))
+    client.log_action(
+        action="claude_managed_agent.continuation_delivered" if success else "claude_managed_agent.continuation_dead_lettered",
+        summary=(
+            f"Delivered operator response to managed agent action {action['external_action_id']}"
+            if success
+            else f"Could not deliver operator response to managed agent action {action['external_action_id']}: {last_error}"
+        ),
+        source={
+            "integration": "claude-managed-agents",
+            "workflow_id": str(action["action_type"]),
+            "run_id": str(action["external_action_id"]),
+        },
+        outcome="success" if success else "failure",
+        severity="info" if success else "warning",
+        thread_id=thread_id,
+        in_reply_to={"type": "request", "id": request_id},
     )
 
     upsert_action(

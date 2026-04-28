@@ -1,3 +1,28 @@
+# Contro1 Claude Managed Agents Skill
+
+Use this when wiring Anthropic/Claude managed-agent session events into Contro1.
+
+## Rules
+
+- Derive `thread_id` from `session_id`; keep `external_request_id` scoped to the individual action.
+- Use `create_protocol_request` for `requires_action` events that need operator approval or instruction.
+- Use `log_action` for continuation delivery, dead-lettering, and any autonomous allowed action.
+- When logging after an operator callback, include `in_reply_to={"type": "request", "id": request_id}`.
+- Dead-letter failed continuations and log them with `outcome="failure"` and `severity="warning"`.
+
+## Threaded continuation
+
+```python
+client.log_action(
+    action="claude_managed_agent.continuation_dead_lettered",
+    summary=f"Could not deliver operator response: {last_error}",
+    source={"integration": "claude-managed-agents", "workflow_id": action_type, "run_id": external_action_id},
+    outcome="failure",
+    severity="warning",
+    thread_id=thread_id,
+    in_reply_to={"type": "request", "id": request_id},
+)
+```
 ---
 name: centcom-claude-managed-agents
 description: Build and harden a production bridge between Claude Managed Agents action-needed events and Contro1/CENTCOM approval workflows.
@@ -117,3 +142,12 @@ Example high-risk policy:
 - Retrying continuation without idempotent keys.
 - Dropping exhausted continuation failures instead of dead-lettering.
 - Continuing after the first approval while the second approval is still pending.
+
+## Full reference links
+
+- Repo: https://github.com/contro1-hq/centcom-claude-managed-agents
+- Production bridge example: https://github.com/contro1-hq/centcom-claude-managed-agents/blob/main/examples/session_event_bridge.py
+- Connector architecture doc: https://github.com/contro1-hq/centcom-claude-managed-agents/blob/main/docs/claude-managed-agents-connector.md
+- Skill file source: https://github.com/contro1-hq/centcom-claude-managed-agents/blob/main/skills/centcom-claude-managed-agents.md
+- Core Python SDK: https://github.com/contro1-hq/centcom
+- Protocol docs: https://contro1.com/docs/audit-records-and-threads

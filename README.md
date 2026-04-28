@@ -61,3 +61,32 @@ Then:
 ## Notes
 
 The example intentionally avoids Anthropic SDK-specific assumptions. Keep the mapping logic, persistence model, and retry behavior as-is, and swap only the `send_to_anthropic_continuation(...)` transport for your runtime endpoint.
+
+## Request and log pattern
+
+Use a request for actions that need approval or instruction before continuation:
+
+```python
+request = client.create_protocol_request({
+    "title": f"Managed agent action: {action_type}",
+    "request_type": "review",
+    "source": {"integration": "claude-managed-agents", "session_id": session_id, "run_id": external_action_id},
+    "continuation": {"mode": "instruction", "callback_url": callback_url},
+    "external_request_id": dedupe_key,
+    "thread_id": thread_id,
+})
+```
+
+Log the continuation result in the same thread:
+
+```python
+client.log_action(
+    action="claude_managed_agent.continuation_delivered",
+    summary=f"Delivered operator response to managed agent action {external_action_id}",
+    source={"integration": "claude-managed-agents", "workflow_id": action_type, "run_id": external_action_id},
+    thread_id=thread_id,
+    in_reply_to={"type": "request", "id": request_id},
+)
+```
+
+See the full bridge example at https://github.com/contro1-hq/centcom-claude-managed-agents/blob/main/examples/session_event_bridge.py.
