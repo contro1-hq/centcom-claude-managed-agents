@@ -43,6 +43,88 @@ Then:
 3. Resolve request in dashboard.
 4. Confirm callback arrives at `/centcom-callback` and bridge logs continuation mapping.
 
+## Request and log pattern
+
+Use `correlation_id = session_id` to group all events from one managed-agent session into a single case timeline:
+
+```python
+request = client.create_protocol_request({
+    "title": f"Managed agent action: {action_type}",
+    "request_type": "review",
+    "source": {"integration": "claude-managed-agents", "session_id": session_id, "run_id": external_action_id},
+    "continuation": {"mode": "instruction", "callback_url": callback_url},
+    "external_request_id": dedupe_key,
+    "correlation_id": session_id,
+})
+```
+
+Log the continuation result in the same case:
+
+```python
+client.log_action(
+    action="claude_managed_agent.continuation_delivered",
+    summary=f"Delivered operator response to managed agent action {external_action_id}",
+    source={"integration": "claude-managed-agents", "workflow_id": action_type, "run_id": external_action_id},
+    correlation_id=session_id,
+    in_reply_to={"type": "request", "id": request_id},
+)
+```
+
+## Control Map preview
+
+For sessions with high-risk action types, check routing at session start. Cache the result for the session duration.
+
+```python
+preview = client.post("/requests/control-map", {
+    "approval_requirements": {"required_roles": ["manager"], "required_approvals": 2},
+    "approval_policy": {
+        "mode": "threshold",
+        "required_approvals": 2,
+        "separation_of_duties": True,
+        "fail_closed_on_timeout": True,
+    },
+})
+
+if not preview["satisfiable"]:
+    raise RuntimeError(f"Cannot route managed-agent review: {preview['warnings']}")
+```
+
+## Production pattern: Agent Plugin
+
+Wrap Contro1 calls behind a plugin to reduce per-event overhead:
+
+```python
+from datetime import datetime, timedelta
+from centcom import CentcomClient
+
+class Contro1Plugin:
+    def __init__(self, client: CentcomClient, cache_ttl_minutes: int = 10):
+        self._client = client
+        self._cache: dict = {}
+        self._ttl = timedelta(minutes=cache_ttl_minutes)
+
+    def preview_policy(self, approval_requirements: dict, approval_policy: dict) -> dict:
+        key = str(sorted(approval_requirements.items()))
+        cached = self._cache.get(key)
+        if cached and datetime.utcnow() < cached["expires"]:
+            return cached["data"]
+        result = self._client.post("/requests/control-map", {
+            "approval_requirements": approval_requirements,
+            "approval_policy": approval_policy,
+        })
+        self._cache[key] = {"data": result, "expires": datetime.utcnow() + self._ttl}
+        return result
+
+    def request_human_review(self, payload: dict) -> dict:
+        return self._client.create_protocol_request(payload)
+
+    def log_audit_action(self, payload: dict) -> dict:
+        return self._client.log_action(**payload)
+
+    def resume_from_decision(self, case_id: str) -> dict:
+        return self._client.get(f"/cases/{case_id}")
+```
+
 ## Local vs production mode
 
 - **Local default**: `SIMULATE_CONTINUATION=true` (logs continuation payload without calling Anthropic).
@@ -62,31 +144,8 @@ Then:
 
 The example intentionally avoids Anthropic SDK-specific assumptions. Keep the mapping logic, persistence model, and retry behavior as-is, and swap only the `send_to_anthropic_continuation(...)` transport for your runtime endpoint.
 
-## Request and log pattern
+## Governance readiness
 
-Use a request for actions that need approval or instruction before continuation:
-
-```python
-request = client.create_protocol_request({
-    "title": f"Managed agent action: {action_type}",
-    "request_type": "review",
-    "source": {"integration": "claude-managed-agents", "session_id": session_id, "run_id": external_action_id},
-    "continuation": {"mode": "instruction", "callback_url": callback_url},
-    "external_request_id": dedupe_key,
-    "thread_id": thread_id,
-})
-```
-
-Log the continuation result in the same thread:
-
-```python
-client.log_action(
-    action="claude_managed_agent.continuation_delivered",
-    summary=f"Delivered operator response to managed agent action {external_action_id}",
-    source={"integration": "claude-managed-agents", "workflow_id": action_type, "run_id": external_action_id},
-    thread_id=thread_id,
-    in_reply_to={"type": "request", "id": request_id},
-)
-```
-
-See the full bridge example at https://github.com/contro1-hq/centcom-claude-managed-agents/blob/main/examples/session_event_bridge.py.
+For teams operating AI in regulated environments:
+- [EU AI Act readiness guide](https://contro1.com/guides/eu-ai-act-readiness)
+- [US AI Governance readiness guide](https://contro1.com/guides/us-ai-governance-readiness)

@@ -4,13 +4,15 @@ Use this when wiring Anthropic/Claude managed-agent session events into Contro1.
 
 ## Rules
 
-- Derive `thread_id` from `session_id`; keep `external_request_id` scoped to the individual action.
+- Derive `correlation_id` from `session_id`; keep `external_request_id` scoped to the individual action (`session_id:external_action_id`).
 - Use `create_protocol_request` for `requires_action` events that need operator approval or instruction.
 - Use `log_action` for continuation delivery, dead-lettering, and any autonomous allowed action.
 - When logging after an operator callback, include `in_reply_to={"type": "request", "id": request_id}`.
 - Dead-letter failed continuations and log them with `outcome="failure"` and `severity="warning"`.
 
-## Threaded continuation
+## Case continuity
+
+All events from the same managed-agent session share one `correlation_id` so the dashboard shows the complete case timeline:
 
 ```python
 client.log_action(
@@ -19,10 +21,11 @@ client.log_action(
     source={"integration": "claude-managed-agents", "workflow_id": action_type, "run_id": external_action_id},
     outcome="failure",
     severity="warning",
-    thread_id=thread_id,
+    correlation_id=session_id,
     in_reply_to={"type": "request", "id": request_id},
 )
 ```
+
 ---
 name: centcom-claude-managed-agents
 description: Build and harden a production bridge between Claude Managed Agents action-needed events and Contro1/CENTCOM approval workflows.
@@ -72,6 +75,7 @@ Create protocol v1 request with:
 - `source.integration`: `claude-managed-agents`
 - `source.session_id`
 - `external_request_id`: `session_id:external_action_id`
+- `correlation_id`: `session_id` (groups all events from this session into one case)
 - `continuation.mode`: `instruction` (recommended default)
 - `continuation.callback_url`: `${PUBLIC_BASE_URL}/centcom-callback`
 - `approval_policy`: required for high-risk actions that need two-person review
@@ -96,6 +100,25 @@ Example high-risk policy:
 - verify timestamp freshness
 - extract protocol response
 - map decision/instruction to Anthropic continuation action
+
+## Check routing before submitting (Control Map)
+
+For sessions with high-risk action types that require specific roles, verify routing is ready before submitting the request. Cache the result per session bootstrap.
+
+```python
+preview = client.post("/requests/control-map", {
+    "approval_requirements": {"required_roles": ["manager"], "required_approvals": 2},
+    "approval_policy": {
+        "mode": "threshold",
+        "required_approvals": 2,
+        "separation_of_duties": True,
+        "fail_closed_on_timeout": True,
+    },
+})
+
+if not preview["satisfiable"]:
+    raise RuntimeError(f"Cannot route managed-agent review: {preview['warnings']}")
+```
 
 ## Implementation steps
 
@@ -138,10 +161,44 @@ Example high-risk policy:
 
 - Creating multiple Contro1 requests for one replayed event.
 - Mapping `revise` to hard deny instead of instruction mode.
-- Losing correlation IDs between event ingest and callback handling.
+- Losing case IDs between event ingest and callback handling.
 - Retrying continuation without idempotent keys.
 - Dropping exhausted continuation failures instead of dead-lettering.
 - Continuing after the first approval while the second approval is still pending.
+
+## Production pattern: Agent Plugin
+
+```python
+from datetime import datetime, timedelta
+from centcom import CentcomClient
+
+class Contro1Plugin:
+    def __init__(self, client: CentcomClient, cache_ttl_minutes: int = 10):
+        self._client = client
+        self._cache: dict = {}
+        self._ttl = timedelta(minutes=cache_ttl_minutes)
+
+    def preview_policy(self, approval_requirements: dict, approval_policy: dict) -> dict:
+        key = str(sorted(approval_requirements.items()))
+        cached = self._cache.get(key)
+        if cached and datetime.utcnow() < cached["expires"]:
+            return cached["data"]
+        result = self._client.post("/requests/control-map", {
+            "approval_requirements": approval_requirements,
+            "approval_policy": approval_policy,
+        })
+        self._cache[key] = {"data": result, "expires": datetime.utcnow() + self._ttl}
+        return result
+
+    def request_human_review(self, payload: dict) -> dict:
+        return self._client.create_protocol_request(payload)
+
+    def log_audit_action(self, payload: dict) -> dict:
+        return self._client.log_action(**payload)
+
+    def resume_from_decision(self, case_id: str) -> dict:
+        return self._client.get(f"/cases/{case_id}")
+```
 
 ## Full reference links
 
@@ -150,4 +207,10 @@ Example high-risk policy:
 - Connector architecture doc: https://github.com/contro1-hq/centcom-claude-managed-agents/blob/main/docs/claude-managed-agents-connector.md
 - Skill file source: https://github.com/contro1-hq/centcom-claude-managed-agents/blob/main/skills/centcom-claude-managed-agents.md
 - Core Python SDK: https://github.com/contro1-hq/centcom
-- Protocol docs: https://contro1.com/docs/audit-records-and-threads
+- Protocol docs: https://contro1.com/docs/audit-records-and-cases
+
+## Governance readiness
+
+For teams operating under EU or US AI governance requirements, see:
+- https://contro1.com/guides/eu-ai-act-readiness
+- https://contro1.com/guides/us-ai-governance-readiness
