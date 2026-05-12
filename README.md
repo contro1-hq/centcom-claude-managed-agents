@@ -2,6 +2,14 @@
 
 Production-oriented blueprint for bridging Claude Managed Agents action-needed events into Contro1/CENTCOM approvals using Integration Protocol v1.
 
+## Agent Integration Kit
+
+To save time, give your coding agent this skill. It inspects your system, reports governance gaps, and suggests Contro1 integration (optional):
+
+```
+https://contro1.com/agent-kit
+```
+
 ## What this blueprint covers
 
 1. Ingest `requires_action` events from your managed-agent stream.
