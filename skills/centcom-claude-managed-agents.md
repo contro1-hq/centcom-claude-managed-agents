@@ -207,6 +207,7 @@ class Contro1Plugin:
 - Connector architecture doc: https://github.com/contro1-hq/centcom-claude-managed-agents/blob/main/docs/claude-managed-agents-connector.md
 - Skill file source: https://github.com/contro1-hq/centcom-claude-managed-agents/blob/main/skills/centcom-claude-managed-agents.md
 - Core Python SDK: https://github.com/contro1-hq/centcom
+- Microsoft AGT companion skill: https://github.com/contro1-hq/contro1-microsoft-agent-governance-toolkit-integration/blob/main/skills/contro1-microsoft-agent-governance-toolkit-integration.md
 - Protocol docs: https://contro1.com/docs/audit-records-and-cases
 
 ## Governance readiness

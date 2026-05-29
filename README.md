@@ -152,6 +152,12 @@ class Contro1Plugin:
 
 The example intentionally avoids Anthropic SDK-specific assumptions. Keep the mapping logic, persistence model, and retry behavior as-is, and swap only the `send_to_anthropic_continuation(...)` transport for your runtime endpoint.
 
+## Related repositories
+
+- [centcom](https://github.com/contro1-hq/centcom) - Python SDK for direct API integrations
+- [centcom-sdk](https://github.com/contro1-hq/centcom-sdk) - JavaScript/TypeScript SDK for direct API integrations
+- [contro1-microsoft-agent-governance-toolkit-integration](https://github.com/contro1-hq/contro1-microsoft-agent-governance-toolkit-integration) - companion bridge for Microsoft AGT `require_approval` policy decisions
+
 ## Governance readiness
 
 For teams operating AI in regulated environments:
