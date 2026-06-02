@@ -1,6 +1,6 @@
 # centcom-claude-managed-agents
 
-Production-oriented blueprint for bridging Claude Managed Agents action-needed events into Contro1/CENTCOM approvals using Integration Protocol v1.
+Production-oriented blueprint for bridging Claude Managed Agents blocking session events into Contro1/CENTCOM approvals using Integration Protocol v1.
 
 Website: https://contro1.com
 
@@ -20,15 +20,16 @@ https://contro1.com/agent-kit
 
 ## What this blueprint covers
 
-1. Ingest `requires_action` events from your managed-agent stream.
-2. Create exactly one Contro1 protocol request per action-needed event.
-3. Verify signed callbacks from Contro1.
-4. Map callback outcomes to managed-agent continuation payloads.
-5. Persist correlation state, dedupe replays, retry continuation transport, and dead-letter exhausted failures.
+1. Stream Claude Managed Agents session events.
+2. Detect `session.status_idle` with `stop_reason.type = "requires_action"`.
+3. Create exactly one Contro1 protocol request per blocking `stop_reason.event_ids` item.
+4. Verify signed callbacks from Contro1.
+5. Map callback outcomes to `user.tool_confirmation` or `user.custom_tool_result`.
+6. Persist correlation state, dedupe replays, retry response-event transport, and dead-letter exhausted failures.
 
 ## What this skill helps with
 
-- Creating approval requests for managed-agent session actions.
+- Creating approval requests for blocking `agent.tool_use`, `agent.mcp_tool_use`, and `agent.custom_tool_use` events.
 - Using `external_request_id` for idempotent action review.
 - Using `correlation_id` to keep a full session timeline together.
 - Handling signed callback verification before continuation.
@@ -48,9 +49,10 @@ Production approvals must go through Contro1 APIs and signed webhooks. MCP or co
 
 ## Contract decisions (required)
 
-- Dedupe key: `session_id:external_action_id`
-- One request per action-needed event
-- `continuation.mode=instruction` by default
+- Dedupe key: `session_id:event_id`
+- One request per blocking event ID
+- Tool confirmations resume with `user.tool_confirmation`
+- Custom tools resume with `user.custom_tool_result`
 - Status mapping is explicit (`approved`, `denied`, `cancelled`, `timed_out`)
 - Callback signature + timestamp verification is mandatory
 
@@ -69,7 +71,7 @@ Then:
 1. POST a sample event to `/managed-agent/event`.
 2. Confirm a request is created in CENTCOM.
 3. Resolve request in dashboard.
-4. Confirm callback arrives at `/centcom-callback` and bridge logs continuation mapping.
+4. Confirm callback arrives at `/centcom-callback` and bridge logs the Claude response-event mapping.
 
 ## Request and log pattern
 
@@ -77,22 +79,22 @@ Use `correlation_id = session_id` to group all events from one managed-agent ses
 
 ```python
 request = client.create_protocol_request({
-    "title": f"Managed agent action: {action_type}",
+    "title": f"Managed agent event: {blocking_event_type}",
     "request_type": "review",
-    "source": {"integration": "claude-managed-agents", "session_id": session_id, "run_id": external_action_id},
-    "continuation": {"mode": "instruction", "callback_url": callback_url},
+    "source": {"integration": "claude-managed-agents", "session_id": session_id, "run_id": event_id},
+    "continuation": {"mode": "event", "callback_url": callback_url},
     "external_request_id": dedupe_key,
     "correlation_id": session_id,
 })
 ```
 
-Log the continuation result in the same case:
+Log the response-event result in the same case:
 
 ```python
 client.log_action(
-    action="claude_managed_agent.continuation_delivered",
-    summary=f"Delivered operator response to managed agent action {external_action_id}",
-    source={"integration": "claude-managed-agents", "workflow_id": action_type, "run_id": external_action_id},
+    action="claude_managed_agent.response_event_delivered",
+    summary=f"Delivered Claude response event for {event_id}",
+    source={"integration": "claude-managed-agents", "workflow_id": blocking_event_type, "run_id": event_id},
     correlation_id=session_id,
     in_reply_to={"type": "request", "id": request_id},
 )
@@ -100,7 +102,7 @@ client.log_action(
 
 ## Control Map preview
 
-For sessions with high-risk action types, check routing at session start. Cache the result for the session duration.
+Most integrations do not need Control Map in the normal approval path. If a request cannot be routed, times out unexpectedly, or your bridge wants to show a clear operational error, call Control Map to see who is currently available.
 
 ```python
 preview = client.post("/requests/control-map", {
@@ -155,10 +157,8 @@ class Contro1Plugin:
 
 ## Local vs production mode
 
-- **Local default**: `SIMULATE_CONTINUATION=true` (logs continuation payload without calling Anthropic).
-- **Production**: set `SIMULATE_CONTINUATION=false` and configure:
-  - `ANTHROPIC_CONTINUATION_URL`
-  - `ANTHROPIC_API_KEY`
+- **Local default**: `SIMULATE_CLAUDE_RESPONSE=true` (logs Claude response events without calling Anthropic).
+- **Production**: replace the simulated transport with the Anthropic Managed Agents session events API and send either `user.tool_confirmation` or `user.custom_tool_result`.
 
 ## Production checklist
 
@@ -170,7 +170,7 @@ class Contro1Plugin:
 
 ## Notes
 
-The example intentionally avoids Anthropic SDK-specific assumptions. Keep the mapping logic, persistence model, and retry behavior as-is, and swap only the `send_to_anthropic_continuation(...)` transport for your runtime endpoint.
+The example keeps the mapping logic, persistence model, and retry behavior explicit. In production, send response events through the Anthropic Managed Agents session events API: `user.tool_confirmation` for `agent.tool_use` / `agent.mcp_tool_use`, and `user.custom_tool_result` for `agent.custom_tool_use`.
 
 ## Related repositories
 
