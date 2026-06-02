@@ -2,6 +2,14 @@
 
 Production-oriented blueprint for bridging Claude Managed Agents action-needed events into Contro1/CENTCOM approvals using Integration Protocol v1.
 
+Website: https://contro1.com
+
+Documentation: https://contro1.com/docs/claude-managed-agents-human-approval
+
+Repository description:
+
+Human approval and audit-control skill for Claude Managed Agents, routing risky agent actions through Contro1 with signed callbacks and policy-ready logs.
+
 ## Agent Integration Kit
 
 To save time, give your coding agent this skill. It inspects your system, reports governance gaps, and suggests Contro1 integration (optional):
@@ -17,6 +25,18 @@ https://contro1.com/agent-kit
 3. Verify signed callbacks from Contro1.
 4. Map callback outcomes to managed-agent continuation payloads.
 5. Persist correlation state, dedupe replays, retry continuation transport, and dead-letter exhausted failures.
+
+## What this skill helps with
+
+- Creating approval requests for managed-agent session actions.
+- Using `external_request_id` for idempotent action review.
+- Using `correlation_id` to keep a full session timeline together.
+- Handling signed callback verification before continuation.
+- Producing audit-ready evidence for approvals, denials, retries, and dead letters.
+
+## Security note
+
+Production approvals must go through Contro1 APIs and signed webhooks. MCP or coding-agent skills can help implement and inspect the integration, but they are not the production approval transport.
 
 ## Files
 
