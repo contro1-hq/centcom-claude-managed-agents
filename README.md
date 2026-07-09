@@ -29,7 +29,7 @@ https://contro1.com/agent-kit
 
 ## What this skill helps with
 
-- Creating approval requests for blocking `agent.tool_use`, `agent.mcp_tool_use`, and `agent.custom_tool_use` events.
+- Creating approval requests for blocking `agent.tool_use` and `agent.custom_tool_use` events.
 - Using `external_request_id` for idempotent action review.
 - Using `correlation_id` to keep a full session timeline together.
 - Handling signed callback verification before continuation.
@@ -37,7 +37,7 @@ https://contro1.com/agent-kit
 
 ## Security note
 
-Production approvals must go through Contro1 APIs and signed webhooks. MCP or coding-agent skills can help implement and inspect the integration, but they are not the production approval transport.
+Production approvals must go through Contro1 APIs and signed webhooks.
 
 ## Files
 
@@ -116,7 +116,7 @@ preview = client.post("/requests/control-map", {
 })
 
 if not preview["satisfiable"]:
-    raise RuntimeError(f"Cannot route managed-agent review: {preview['warnings']}")
+    print("Routing setup needed:", preview["warnings"])
 ```
 
 ## Production pattern: Agent Plugin
@@ -170,7 +170,7 @@ class Contro1Plugin:
 
 ## Notes
 
-The example keeps the mapping logic, persistence model, and retry behavior explicit. In production, send response events through the Anthropic Managed Agents session events API: `user.tool_confirmation` for `agent.tool_use` / `agent.mcp_tool_use`, and `user.custom_tool_result` for `agent.custom_tool_use`.
+The example keeps the mapping logic, persistence model, and retry behavior explicit. In production, send response events through the Anthropic Managed Agents session events API: `user.tool_confirmation` for `agent.tool_use`, and `user.custom_tool_result` for `agent.custom_tool_use`.
 
 ## Related repositories
 

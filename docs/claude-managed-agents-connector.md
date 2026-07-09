@@ -112,8 +112,8 @@ Validation rules:
 
 Use `status`, `message`, `structured_response` from callback (or nested `protocol_response`).
 
-- `approved` + `agent.tool_use` / `agent.mcp_tool_use` -> `user.tool_confirmation` with `result: "allow"`
-- `denied` + `agent.tool_use` / `agent.mcp_tool_use` -> `user.tool_confirmation` with `result: "deny"` and `deny_message`
+- `approved` + `agent.tool_use` -> `user.tool_confirmation` with `result: "allow"`
+- `denied` + `agent.tool_use` -> `user.tool_confirmation` with `result: "deny"` and `deny_message`
 - `timed_out` / `cancelled` -> fail closed with `result: "deny"` for tool confirmations
 - `approved` + `agent.custom_tool_use` -> execute the custom tool, then send `user.custom_tool_result`
 - `denied` + `agent.custom_tool_use` -> do not execute the custom tool

@@ -3,7 +3,7 @@
 This example mirrors Anthropic's Managed Agents event model:
 - tool confirmation pauses on session.status_idle with stop_reason.type="requires_action"
 - blocking event IDs are in stop_reason.event_ids
-- agent.tool_use / agent.mcp_tool_use resume with user.tool_confirmation
+- agent.tool_use resumes with user.tool_confirmation
 - agent.custom_tool_use resumes with user.custom_tool_result
 """
 
@@ -234,7 +234,7 @@ def build_claude_response_events(approval: sqlite3.Row, payload: dict[str, Any])
     blocking_event_type = str(approval["blocking_event_type"])
     blocking_event = json.loads(str(approval["blocking_event_json"]))
 
-    if blocking_event_type in {"agent.tool_use", "agent.mcp_tool_use"}:
+    if blocking_event_type == "agent.tool_use":
         event: dict[str, Any] = {
             "type": "user.tool_confirmation",
             "tool_use_id": event_id,

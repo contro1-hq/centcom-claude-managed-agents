@@ -12,7 +12,7 @@ Use this skill when integrating Contro1 into an existing Claude Managed Agents b
 
 - Listen to the Claude Managed Agents session event stream.
 - When the session emits `session.status_idle` with `stop_reason.type == "requires_action"`, inspect the blocking `stop_reason.event_ids`.
-- For `agent.tool_use` or `agent.mcp_tool_use`, create a Contro1 approval request and then send `user.tool_confirmation` with `result: "allow"` or `result: "deny"`.
+- For `agent.tool_use`, create a Contro1 approval request and then send `user.tool_confirmation` with `result: "allow"` or `result: "deny"`.
 - For `agent.custom_tool_use`, create a Contro1 approval request before executing the custom tool, then send `user.custom_tool_result` only after approval.
 - Use `session_id` as `correlation_id` so the full managed-agent session appears in one case timeline.
 - Use `session_id:event_id` in `external_request_id` so replayed or reprocessed events are idempotent.
@@ -98,7 +98,7 @@ payload = verify_contro1_webhook(request_body, headers)
 mapping = load_mapping(payload["request_id"])
 approved = payload["status"] == "approved" and payload.get("response", {}).get("approved")
 
-if mapping.blocking_event_type in ("agent.tool_use", "agent.mcp_tool_use"):
+if mapping.blocking_event_type == "agent.tool_use":
     anthropic_client.beta.sessions.events.send(
         mapping.session_id,
         events=[{
