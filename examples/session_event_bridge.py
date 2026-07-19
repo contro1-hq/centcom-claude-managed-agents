@@ -172,6 +172,35 @@ def verify_contro1_signature(raw_body: bytes) -> tuple[bool, str]:
     return True, ""
 
 
+def build_approval_context(event_id: str, blocking_event_type: str, blocking_event: dict[str, Any]) -> dict[str, Any]:
+    """Build request context from three sources: the verbatim tool input (machine-observed),
+    the blocking event/session facts (machine-observed), and the agent's own justification
+    (agent-reported). See https://contro1.com/docs/requests-api for the full pattern.
+
+    `reason` must be a required input parameter on risky custom tools so Claude produces the
+    justification as part of the same tool-use call, not something reconstructed afterward.
+    """
+    tool_input = dict(blocking_event.get("input") or {})
+    reason = tool_input.pop("reason", None)
+
+    if blocking_event_type == "agent.custom_tool_use" and not reason:
+        # Fail closed: never forward a high-risk custom tool call to a human reviewer
+        # without the justification the tool's schema was supposed to require.
+        raise RuntimeError(
+            f"Custom tool {blocking_event.get('name', event_id)} is missing a required "
+            "`reason` input; failing closed instead of asking the operator to guess intent."
+        )
+
+    return {
+        "action": {"tool": blocking_event.get("name", "unknown_tool"), "input": tool_input},
+        "machine_observed": {
+            "blocking_event_id": event_id,
+            "blocking_event_type": blocking_event_type,
+        },
+        "agent_reported": {"justification": reason},
+    }
+
+
 def create_contro1_request(session_id: str, event_id: str, blocking_event: dict[str, Any]) -> dict[str, Any]:
     blocking_event_type = str(blocking_event.get("type", "agent.tool_use"))
     dedupe_key = f"claude:{session_id}:{event_id}"
@@ -201,7 +230,7 @@ def create_contro1_request(session_id: str, event_id: str, blocking_event: dict[
                 "run_id": event_id,
             },
             "routing": {"priority": "normal", "required_role": "developer"},
-            "context": {"blocking_event_id": event_id, "blocking_event": blocking_event},
+            "context": build_approval_context(event_id, blocking_event_type, blocking_event),
             "continuation": {"mode": "event", "callback_url": f"{PUBLIC_BASE_URL}/centcom-callback"},
             "external_request_id": dedupe_key,
             "correlation_id": session_id,

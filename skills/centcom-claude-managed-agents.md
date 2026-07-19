@@ -59,6 +59,12 @@ request = centcom.create_request(
 )
 ```
 
+## Send context the reviewer can trust
+
+Build the approval `context` inside the bridge, at the point where you resolve `stop_reason.event_ids` into a `blocking_event` - not by asking Claude to explain itself after the fact. Three sources feed it: the exact `blocking_event["input"]` your bridge already holds, copied verbatim as a machine-observed fact; the event or message that started the managed-agent session (the session kickoff input, or whatever you pass through `metadata`); and the agent's own justification, which is only trustworthy if it rides through the gate with the action itself. For `agent.custom_tool_use`, add a required `reason` parameter to the custom tool's input schema so Claude must produce that justification as part of the same tool-use event Contro1 is reviewing, instead of your bridge asking "why" once the event is already blocking.
+
+Keep provenance separated inside `context`: verbatim tool input and session facts under a `machine_observed` key, the model-authored `reason` under a separate `agent_reported` key. Two rules follow from that split: `agent_reported` text must never change `required_role`, routing, or which `approval_policy` applies to the event - it only gives the human reviewer color, since a prompt-injected agent can produce a very persuasive justification for a bad `agent.tool_use` or `agent.custom_tool_use` call. And if a high-risk custom-tool event arrives without its required `reason`, treat it like an invalid callback and fail closed rather than forwarding a guess to the operator. See https://contro1.com/docs/requests-api for the full pattern.
+
 ## 2. Full production bridge shape
 
 A production bridge should stream session events, detect `session.status_idle` with `stop_reason.type == "requires_action"`, create a Contro1 request for each blocking event, persist the mapping, wait for a signed Contro1 callback, and then send the correct Claude response event.

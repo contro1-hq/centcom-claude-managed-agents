@@ -78,15 +78,27 @@ Then:
 Use `correlation_id = session_id` to group all events from one managed-agent session into a single case timeline:
 
 ```python
+tool_input = dict(blocking_event.get("input") or {})
+reason = tool_input.pop("reason", None)  # require `reason` on risky custom tools
+
 request = client.create_protocol_request({
     "title": f"Managed agent event: {blocking_event_type}",
     "request_type": "review",
     "source": {"integration": "claude-managed-agents", "session_id": session_id, "run_id": event_id},
+    "context": {
+        "action": {"tool": blocking_event.get("name"), "input": tool_input},
+        "machine_observed": {"blocking_event_id": event_id, "blocking_event_type": blocking_event_type},
+        "agent_reported": {"justification": reason},
+    },
     "continuation": {"mode": "event", "callback_url": callback_url},
     "external_request_id": dedupe_key,
     "correlation_id": session_id,
 })
 ```
+
+## Send context the reviewer can trust
+
+Build request `context` in the bridge from the exact `blocking_event["input"]` your code already holds, the session/event that triggered it, and the agent's own justification - and require a `reason` parameter on risky custom tools so Claude produces that justification at decision time, not after the event is already blocking. Keep the split explicit: verbatim facts under `machine_observed`, model-authored text under `agent_reported`. Agent-reported text should never change routing, `required_role`, or `approval_policy`, and a high-risk custom-tool event that arrives without its required `reason` should fail closed rather than being forwarded to a human to guess. Full pattern: https://contro1.com/docs/requests-api.
 
 Log the response-event result in the same case:
 
