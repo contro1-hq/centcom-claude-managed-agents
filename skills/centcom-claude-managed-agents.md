@@ -8,6 +8,65 @@ user_invocable: true
 
 Use this skill when integrating Contro1 into an existing Claude Managed Agents bridge.
 
+<!-- contro1:connect:start - generated from contro1.com/docs/connect-an-agent -->
+## Connect your Claude Managed Agent agent to Contro1
+
+A Claude Managed Agent agent runs in your own code, so it connects with an Agent Credential: a key bound to one agent, so every call is attributed to it and nothing in a request can change which agent it is.
+
+1. Register the agent: contro1 init --name "<name>" --framework claude-managed-agents, and finish the setup link it prints (purpose and owner).
+2. Connect the application account under Apps, if it is not connected yet.
+3. Give the agent the Actions it needs under Access. It starts with none.
+4. Create an Agent Credential for it (Settings, API keys) and store it as CONTRO1_API_KEY in your secret manager.
+5. Call Actions from your tools as below. The same credential creates approval requests for work your own code does.
+
+Full guide: [Connect an agent: every path, in full](https://contro1.com/docs/connect-an-agent)
+
+### Run an application Action from a Claude Managed Agent tool
+
+Contro1 holds the account and makes the call, so the record is what Contro1 observed. The tool returns what the Action produced; when a person has to approve first, it waits and then returns the result. It never re-submits: a retry could send a second email.
+
+Before writing the input, read the exact input_schema with get_action_contract, or from the Action on the Access page.
+
+Install: `pip install "centcom>=1.5.0"`
+
+```python
+import os, uuid
+from centcom import CentcomClient, needs_human_resolution
+
+contro1 = CentcomClient(api_key=os.environ["CONTRO1_API_KEY"])  # an Agent Credential
+
+def run_action(action_id: str, input: dict, *, account_mode: str = "shared", **kw):
+    """Run a Contro1 Action and return what it produced. Never retries a send."""
+    out = contro1.actions.invoke(
+        action_id, input,
+        authority_mode=kw.pop("authority_mode", "agent_principal"),
+        account_mode=account_mode,
+        idempotency_key=kw.pop("idempotency_key", str(uuid.uuid4())),
+        **kw,
+    )
+    inv = out["invocation"]
+    if inv["state"] == "executed":
+        return out["result"]
+    if inv["state"] == "awaiting_approval":
+        settled = contro1.actions.wait_for_invocation(inv["invocation_id"])
+        if needs_human_resolution(settled):
+            raise RuntimeError("Outcome unknown; a person must check. Do not retry.")
+        return contro1.actions.get_result(settled["invocation_id"])
+    raise RuntimeError(f"Not run: {inv['state']} {out.get('not_run', '')}")
+
+# Declare a custom tool "list_recent_emails" on the agent, and answer its
+# tool_use events from your service - where the Agent Credential lives, never
+# inside the agent's environment.
+def handle_tool_use(name: str, tool_input: dict):
+    if name == "list_recent_emails":
+        return run_action("gmail.message.list", {"max_results": tool_input.get("max_results", 5)})
+    raise ValueError(f"unknown tool {name}")
+```
+
+Everything below this section covers the other half: asking a person before a step your own code runs, using the same credential.
+
+<!-- contro1:connect:end -->
+
 ## Rules
 
 - Listen to the Claude Managed Agents session event stream.
